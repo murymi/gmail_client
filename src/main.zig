@@ -23,7 +23,9 @@ const Gmail = struct {
 
     pub fn init(
         allocator: Allocator,
+        config: Config
     ) !*Self {
+    
         const gmptr = try allocator.create(Self);
         errdefer allocator.destroy(gmptr);
 
@@ -101,17 +103,27 @@ const Gmail = struct {
         errdefer gm.cert_bundle.deinit(allocator);
         try gm.cert_bundle.rescan(gm.gpa);
 
+        try gm.connect();
+        try gm.read();
+
+        try gm.ehlo();
+
+        try gm.read();
+
+        try gm.startTLS();
+        std.debug.print("\n\n", .{});
+        try gm.authLogin(config.username, config.apps_password);
 
         gmptr.* = gm;
 
         return gmptr;
     }
 
-    pub fn connect(self: *Self) !void {
+    fn connect(self: *Self) !void {
         self.stream = try net.tcpConnectToHost(self.gpa, "smtp.gmail.com", 587);
     }
 
-    pub fn read(self: *Self) !void {
+    fn read(self: *Self) !void {
         @memset(&recvBuff, 0);
         if (!ontls) {
             if (self.stream) |s| {
@@ -146,11 +158,11 @@ const Gmail = struct {
         }
     }
 
-    pub fn ehlo(self: *Self) !void {
+    fn ehlo(self: *Self) !void {
         try write(self, "EHLO smtp.gmail.com\r\n");
     }
 
-    pub fn startTLS(self: *Self) !void {
+    fn startTLS(self: *Self) !void {
         const startTlsMessage = "STARTTLS\r\n";
 
         if (self.stream) |s| {
@@ -186,7 +198,9 @@ const Gmail = struct {
         }
     }
 
-    pub fn authLogin(self: *Self) !void {
+    fn authLogin(self: *Self, username: []const u8, password: []const u8) !void {
+    
+    
         if (!ontls) unreachable;
         try write(self, "AUTH LOGIN\r\n");
 
@@ -194,7 +208,7 @@ const Gmail = struct {
 
         var dest: [1024]u8 = undefined;
 
-        const encodedUsername = self.b64_encoder.encode(&dest, "vycnjagi@gmail.com");
+        const encodedUsername = self.b64_encoder.encode(&dest, username);
 
 
         try self.write(encodedUsername);
@@ -202,32 +216,24 @@ const Gmail = struct {
         try self.read();
 
 
-        const encodedPassword = self.b64_encoder.encode(&dest, "zmlw avhn mjun mkss");
+        const encodedPassword = self.b64_encoder.encode(&dest, password);
 
         try self.write(encodedPassword);
         try self.write("\r\n");
         try self.read();
-        
+
+        const fmt = try std.fmt.bufPrint(&dest, "MAIL FROM: <{s}>\r\n", .{password});
+
+        try self.write(fmt);
     }
+
 };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var y = try Gmail.init(allocator);
+    var y = try Gmail.init(allocator, .{ .apps_password = "zmlw avhn mjun mkss", .username = "vycnjagi@gmail.com"});
     defer y.deinit();
-
-    try y.connect();
-
-    try y.read();
-
-    try y.ehlo();
-
-    try y.read();
-
-    try y.startTLS();
-    std.debug.print("=============================\n", .{});
-    try y.authLogin();
 
 }
