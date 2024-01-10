@@ -21,84 +21,84 @@ const Gmail = struct {
     var recvBuff: [4096]u8 = undefined;
     var ontls: bool = false;
 
-    pub fn init(
-        allocator: Allocator,
-        config: Config
-    ) !*Self {
-    
+    pub fn init(allocator: Allocator, config: Config) !*Self {
         const gmptr = try allocator.create(Self);
         errdefer allocator.destroy(gmptr);
 
         const chars = [_]u8{
-        'A', 
-        'B', 
-        'C',
-        'D',
-        'E',
-        'F',
-        'G',
-        'H',
-        'I',
-        'J',
-        'K',
-        'L',
-        'M',
-        'N',
-        'O',
-        'P',
-        'Q',
-        'R',
-        'S',
-        'T',
-        'U',
-        'V',
-        'W',
-        'X',
-        'Y',
-        'Z',
-        'a',
-        'b',
-        'c',
-        'd',
-        'e',
-        'f',
-        'g',
-        'h',
-        'i',
-        'j',
-        'k',
-        'l',
-        'm',
-        'n',
-        'o',
-        'p',
-        'q',
-        'r',
-        's',
-        't',
-        'u',
-        'v',
-        'w',
-        'x',
-        'y',
-        'z',
-        '0',
-        '1',
-        '2',
-        '3',
-        '4',
-        '5',
-        '6',
-        '7',
-        '8',
-        '9',
-        '+',
-        '/',
+            'A',
+            'B',
+            'C',
+            'D',
+            'E',
+            'F',
+            'G',
+            'H',
+            'I',
+            'J',
+            'K',
+            'L',
+            'M',
+            'N',
+            'O',
+            'P',
+            'Q',
+            'R',
+            'S',
+            'T',
+            'U',
+            'V',
+            'W',
+            'X',
+            'Y',
+            'Z',
+            'a',
+            'b',
+            'c',
+            'd',
+            'e',
+            'f',
+            'g',
+            'h',
+            'i',
+            'j',
+            'k',
+            'l',
+            'm',
+            'n',
+            'o',
+            'p',
+            'q',
+            'r',
+            's',
+            't',
+            'u',
+            'v',
+            'w',
+            'x',
+            'y',
+            'z',
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+            '+',
+            '/',
         };
 
-        var gm: Self = .{ .gpa = allocator, .cert_bundle = std.crypto.Certificate.Bundle{}, .stream = null, .tls_client = null,
-        
-        .b64_encoder = b64.Base64Encoder.init(chars, '='),
+        var gm: Self = .{
+            .gpa = allocator,
+            .cert_bundle = std.crypto.Certificate.Bundle{},
+            .stream = null,
+            .tls_client = null,
+
+            .b64_encoder = b64.Base64Encoder.init(chars, '='),
         };
         errdefer gm.cert_bundle.deinit(allocator);
         try gm.cert_bundle.rescan(gm.gpa);
@@ -199,8 +199,6 @@ const Gmail = struct {
     }
 
     fn authLogin(self: *Self, username: []const u8, password: []const u8) !void {
-    
-    
         if (!ontls) unreachable;
         try write(self, "AUTH LOGIN\r\n");
 
@@ -210,11 +208,9 @@ const Gmail = struct {
 
         const encodedUsername = self.b64_encoder.encode(&dest, username);
 
-
         try self.write(encodedUsername);
         try self.write("\r\n");
         try self.read();
-
 
         const encodedPassword = self.b64_encoder.encode(&dest, password);
 
@@ -227,13 +223,29 @@ const Gmail = struct {
         try self.write(fmt);
     }
 
+    pub fn rcptToOne(self: *Self, username: []const u8) !void {
+        const recpMessage: [1024]u8 = undefined;
+        const res = std.fmt.bufPrint(&recpMessage, "RCPT TO: {s}\r\n", .{username});
+        try self.write(res);
+
+        try self.read();
+    }
+
+    pub fn rcptToMany(self: *Self, username: [][]const u8) !void {
+        const recpMessage: [1024]u8 = undefined;
+
+        for (username) |uname| {
+            const res = std.fmt.bufPrint(&recpMessage, "RCPT TO: {s}\r\n", .{uname});
+            try self.write(res);
+            try self.read();
+        }
+    }
 };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var y = try Gmail.init(allocator, .{ .apps_password = "zmlw avhn mjun mkss", .username = "vycnjagi@gmail.com"});
+    var y = try Gmail.init(allocator, .{ .apps_password = "zmlw avhn mjun mkss", .username = "vycnjagi@gmail.com" });
     defer y.deinit();
-
 }
