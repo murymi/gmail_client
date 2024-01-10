@@ -3,6 +3,7 @@ const TlsClinet = std.crypto.tls.Client;
 const net = std.net;
 const Allocator = std.mem.Allocator;
 const b64 = std.base64;
+const userArray = std.ArrayList([]const u8);
 
 const Config = struct {
     apps_password: []const u8,
@@ -17,6 +18,8 @@ const Gmail = struct {
     stream: ?net.Stream,
     tls_client: ?TlsClinet,
     b64_encoder: b64.Base64Encoder,
+    receipients: userArray,
+
 
     var recvBuff: [4096]u8 = undefined;
     var ontls: bool = false;
@@ -99,8 +102,16 @@ const Gmail = struct {
             .tls_client = null,
 
             .b64_encoder = b64.Base64Encoder.init(chars, '='),
+            .receipients = userArray.init(allocator)
         };
-        errdefer gm.cert_bundle.deinit(allocator);
+
+        
+
+        errdefer {
+            gm.cert_bundle.deinit(allocator);
+            gm.receipients.deinit();
+        }
+
         try gm.cert_bundle.rescan(gm.gpa);
 
         try gm.connect();
@@ -224,22 +235,58 @@ const Gmail = struct {
     }
 
     pub fn rcptToOne(self: *Self, username: []const u8) !void {
-        const recpMessage: [1024]u8 = undefined;
-        const res = std.fmt.bufPrint(&recpMessage, "RCPT TO: {s}\r\n", .{username});
+        var recpMessage: [1024]u8 = undefined;
+        const res = try std.fmt.bufPrint(&recpMessage, "RCPT TO: <{s}>\r\n", .{username});
+        try self.write(res);
+
+        try self.read();
+        try self.receipients.append(username);
+    }
+
+    pub fn rcptToMany(self: *Self, username: [][]const u8) !void {
+        var recpMessage: [1024]u8 = undefined;
+
+        for (username) |uname| {
+            const res = try std.fmt.bufPrint(&recpMessage, "RCPT TO: <{s}>\r\n", .{uname});
+            try self.write(res);
+            try self.read();
+            try self.receipients.append(uname);
+        }
+
+    }
+
+    pub fn send(self: *Self, message: []const u8) !void {
+        try self.write("DATA\r\n");
+        try self.read();
+
+        var messageFmt: [8192]u8 = undefined;
+
+        const joinedUsers = try std.mem.join(self.gpa, ",", self.receipients.items);
+        defer self.gpa.free(joinedUsers);
+
+        errdefer self.gpa.free(joinedUsers);
+
+        const res = try std.fmt.bufPrint(&messageFmt, "Date: Tue, 09 oct 2023 16:26:00\r\n" ++
+            "From: vycnjagi@gmail.com\r\n" ++
+            "Subject: Hello world\r\n" ++
+            "To: {s}\r\n" ++
+            "MIME-Version: 1.0\r\n" ++
+            "Content-type: text/plain\r\n" ++
+            "\r\n" ++
+            "{s}\r\n" ++
+            "vic.\r\n" ++
+            ".\r\n", .{ joinedUsers,message});
+
+            std.debug.print("\n{s}\n", .{joinedUsers});
         try self.write(res);
 
         try self.read();
     }
 
-    pub fn rcptToMany(self: *Self, username: [][]const u8) !void {
-        const recpMessage: [1024]u8 = undefined;
-
-        for (username) |uname| {
-            const res = std.fmt.bufPrint(&recpMessage, "RCPT TO: {s}\r\n", .{uname});
-            try self.write(res);
-            try self.read();
-        }
-    }
+    pub fn quit(self: *Self) !void {
+        try self.write("QUIT\r\n");
+        try self.read();
+    } 
 };
 
 pub fn main() !void {
@@ -247,5 +294,11 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var y = try Gmail.init(allocator, .{ .apps_password = "zmlw avhn mjun mkss", .username = "vycnjagi@gmail.com" });
+    
+    var users = [_][]const u8{"murimimlvictor@gmail.com", "victornjagi@students.uonbi.ac.ke"};
+    
+    try y.rcptToMany(&users);
+    try y.send("hello world");
+    try y.quit();
     defer y.deinit();
 }
